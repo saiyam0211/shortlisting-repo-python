@@ -1,0 +1,33 @@
+name: Auto-Score
+on:
+  push:
+    branches-ignore: [main]
+jobs:
+  score:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - run: |
+          pip install -r requirements.txt
+          pytest tests/ -v
+      - name: Update results
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          git fetch origin main
+          git checkout main
+          [ ! -f results.md ] && echo -e "# Results\n\n| Branch | Status |\n|--------|--------|\n| _Wait_ | - |\n" > results.md
+          echo "| $BRANCH | ✅ PASSED |" >> results.md
+          git config user.name "Bot"
+          git config user.email "bot@hackathon.com"
+          git add results.md
+          git commit -m "[AUTO] Score" || true
+          git push origin main || true
