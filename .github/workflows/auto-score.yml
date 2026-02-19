@@ -1,9 +1,12 @@
 name: Auto-Score
+
 on:
   push:
-    branches-ignore: [main]
+    branches-ignore:
+      - main
+
 jobs:
-  score:
+  evaluate:
     if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -13,21 +16,89 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Validate branch
+        id: validate
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          
+          # Must match: WORD_WORD_AI_Fix (at least 2 words before AI_Fix)
+          if [[ ! "$BRANCH" =~ ^[A-Z][A-Z_]*_[A-Z][A-Z_]*_AI_Fix$ ]]; then
+            echo "❌ Invalid: $BRANCH"
+            echo "Expected: TEAM_NAME_LEADER_NAME_AI_Fix"
+            exit 1
+          fi
+          
+          TEMP="${BRANCH%_AI_Fix}"
+          echo "team=${TEMP%_*}" >> $GITHUB_OUTPUT
+          echo "leader=${TEMP##*_}" >> $GITHUB_OUTPUT
+          echo "✅ Valid branch"
+      
+      - name: Check commits
+        id: commits
+        run: |
+          git fetch origin main 2>/dev/null || true
+          BASE=$(git show-ref --verify refs/remotes/origin/main 2>/dev/null && echo "origin/main" || echo "HEAD~1")
+          COUNT=$(git rev-list --count $BASE..HEAD 2>/dev/null || echo "1")
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          
+          INVALID=$(git log $BASE..HEAD --format="%s" 2>/dev/null | grep -v "^\[AI-AGENT\]\|\[AUTO-FIX\]" || true)
+          [ -n "$INVALID" ] && echo "❌ Missing prefix" && exit 1
+          echo "✅ All commits valid"
+      
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: |
-          pip install -r requirements.txt
-          pytest tests/ -v
+      
+      - name: Run tests
+        run: |
+          [ -f requirements.txt ] && pip install -r requirements.txt -q
+          [ -f .flake8 ] && flake8 src/
+          [ -f .pylintrc ] && pylint src/ --fail-under=8.0
+          [ -d tests ] && pytest tests/ -v
+      
+      - name: Calculate score
+        id: score
+        run: |
+          COMMITS=${{ steps.commits.outputs.count }}
+          BASE=$(git show-ref --verify refs/remotes/origin/main 2>/dev/null && echo "origin/main" || echo "HEAD~1")
+          FIRST=$(git log $BASE..HEAD --reverse --format=%ct 2>/dev/null | head -1 || date +%s)
+          LAST=$(git log $BASE..HEAD --format=%ct 2>/dev/null | head -1 || date +%s)
+          DURATION=$(( (LAST - FIRST) / 60 ))
+          [ $DURATION -eq 0 ] && DURATION=1
+          
+          SCORE=100
+          [ $DURATION -lt 5 ] && SCORE=$((SCORE + 10))
+          [ $COMMITS -gt 20 ] && SCORE=$((SCORE - (COMMITS - 20) * 2))
+          [ $SCORE -lt 0 ] && SCORE=0
+          [ $SCORE -gt 110 ] && SCORE=110
+          
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "📊 Score: $SCORE (${DURATION}m, ${COMMITS} commits)"
+      
       - name: Update results
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          git fetch origin main
-          git checkout main
-          [ ! -f results.md ] && echo -e "# Results\n\n| Branch | Status |\n|--------|--------|\n| _Wait_ | - |\n" > results.md
-          echo "| $BRANCH | ✅ PASSED |" >> results.md
+          BRANCH="${{ steps.validate.outputs.branch }}"
+          SCORE="${{ steps.score.outputs.score }}"
+          COMMITS="${{ steps.commits.outputs.count }}"
+          DURATION="${{ steps.score.outputs.duration }}"
+          TIME=$(date -u +"%Y-%m-%d %H:%M UTC")
+          
+          git fetch origin main 2>/dev/null || true
+          git checkout main 2>/dev/null || git checkout master 2>/dev/null || exit 0
+          
+          [ ! -f results.md ] && printf "# Results\n\n| Branch | Status | Time | Commits | Score | Timestamp |\n|--------|--------|------|---------|-------|-----------|\n| _Waiting..._ | - | - | - | - | - |\n" > results.md
+          
+          ENTRY="| $BRANCH | ✅ PASSED | ${DURATION}m | $COMMITS | **${SCORE}/100** | $TIME |"
+          grep -v "$BRANCH" results.md 2>/dev/null > temp.md || cat results.md > temp.md
+          awk -v e="$ENTRY" '/Waiting/{print e} 1' temp.md > results.md
+          rm -f temp.md
+          
           git config user.name "Bot"
           git config user.email "bot@hackathon.com"
           git add results.md
-          git commit -m "[AUTO] Score" || true
-          git push origin main || true
+          git commit -m "[AUTO] Score: $SCORE" 2>/dev/null || true
+          git push 2>/dev/null || true
+          echo "✅ Done"
