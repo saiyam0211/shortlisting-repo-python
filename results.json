@@ -1,0 +1,45 @@
+{
+  "repo_url": "https://github.com/saiyam0211/shortlisting-repo-python",
+  "team_name": "jhfg",
+  "leader_name": "fjff",
+  "branch_name": "JHFG_FJFF_AI_Fix",
+  "total_failures": 2,
+  "total_fixes": 1,
+  "ci_status": "PASSED",
+  "iterations_used": 2,
+  "max_iterations": 5,
+  "timeline": [
+    {
+      "status": "FAILED",
+      "timestamp": "08:52:57",
+      "message": "2 failure(s) detected, 1 fix(es) applied",
+      "failures_in_run": 2,
+      "fixes_in_run": 1
+    },
+    {
+      "status": "PASSED",
+      "timestamp": "08:52:59",
+      "message": "All tests passing \u2014 pipeline green",
+      "failures_in_run": 0,
+      "fixes_in_run": 0
+    }
+  ],
+  "fixes": [
+    {
+      "file": "src/utils.py",
+      "bug_type": "LOGIC",
+      "line_number": 4,
+      "commit_message": "[AI-AGENT] Fix: initialize max_val with first list element",
+      "status": "fixed",
+      "fix_description": "initialize max_val with first list element"
+    },
+    {
+      "file": "src/utils.py",
+      "bug_type": "LOGIC",
+      "line_number": 11,
+      "commit_message": "[AI-AGENT] Fix: correct list slicing to include n items",
+      "status": "fixed",
+      "fix_description": "correct list slicing to include n items"
+    }
+  ]
+}
